@@ -1,0 +1,82 @@
+services:
+  # 1. Database - The foundation
+  db:
+    image: mysql:8.0
+    container_name: quiz_db_container
+    restart: always
+    environment:
+      MYSQL_DATABASE: quiz_db
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # 2. Eureka Service Registry
+  service-registry:
+    build: ./service-registry
+    container_name: service-registry
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8761"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Question Service
+  question-service:
+    build: ./question-service
+    container_name: question-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+      service-registry:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/quiz_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://service-registry:8761/eureka/
+
+  # 4. Quiz Service
+  quiz-service:
+    build: ./quiz-service
+    container_name: quiz-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      db:
+        condition: service_healthy
+      service-registry:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/quiz_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://service-registry:8761/eureka/
+
+  # 5. API Gateway
+  api-gateway:
+    build: ./API-Gateway/API-Gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      service-registry:
+        condition: service_healthy
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://service-registry:8761/eureka/
+
+  # 6. React Frontend
+  frontend:
+    build: ./Frontend/my-react-app
+    container_name: quiz-frontend
+    ports:
+      - "5173:5173"
+    stdin_open: true
+    tty: true
